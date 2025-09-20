@@ -20,6 +20,7 @@ use Tempest\Router\Exceptions\ControllerActionHadNoReturn;
 use Tempest\Router\HttpMiddleware;
 use Tempest\Router\HttpMiddlewareCallable;
 use Tempest\Validation\Rule;
+use Tempest\Validation\Validator;
 
 use function Tempest\env;
 use function Tempest\get;
@@ -28,181 +29,178 @@ use function Tempest\root_path;
 #[Priority(Priority::HIGH)]
 class Middleware implements HttpMiddleware
 {
-    public Session $session {
-        get => get(Session::class);
+  public Session $session {
+    get => get(Session::class);
+  }
+
+  public function __construct(
+    public readonly ResponseFactory $inertia,
+    private readonly Validator $validator,
+  ) {}
+
+  /**
+   * The root template loaded on the first page visit.
+   *
+   * @see https://inertiajs.com/server-side-setup#root-template
+   */
+  protected string $rootView = 'inertia.view.php';
+
+  /**
+   * Determines the current asset version.
+   *
+   * @see https://inertiajs.com/asset-versioning
+   */
+  public function version(): ?string
+  {
+    if (env('VITE_ASSET_URL')) {
+      return hash('xxh128', (string) env('VITE_ASSET_URL'));
     }
 
-    public function __construct(
-        public readonly ResponseFactory $inertia,
-    ) {}
+    $manifestPathFromEnv = env('TEMPEST_PLUGIN_CONFIGURATION_PATH');
 
-    /**
-     * The root template loaded on the first page visit.
-     *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     */
-    protected string $rootView = 'inertia.view.php';
-
-    /**
-     * Determines the current asset version.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
-    public function version(): ?string
-    {
-        if (env('VITE_ASSET_URL')) {
-            return hash('xxh128', (string) env('VITE_ASSET_URL'));
-        }
-
-        $manifestPathFromEnv = env('TEMPEST_PLUGIN_CONFIGURATION_PATH');
-
-        if ($manifestPathFromEnv && file_exists($manifestPathFromEnv)) {
-            return hash_file('xxh128', $manifestPathFromEnv);
-        }
-
-        $manifest = root_path('/public/build/manifest.json');
-        if (file_exists($manifest)) {
-            return hash_file('xxh128', $manifest);
-        }
-
-        return null;
+    if ($manifestPathFromEnv && file_exists($manifestPathFromEnv)) {
+      return hash_file('xxh128', $manifestPathFromEnv);
     }
 
-    /**
-     * Defines the props that are shared by default.
-     *
-     * @see https://inertiajs.com/shared-data
-     *
-     * @return array<string, mixed>
-     */
-    public function share(Request $request): array
-    {
-        return [
-            'errors' => $this->inertia->always($this->resolveValidationErrors($request)),
-        ];
+    $manifest = root_path('/public/build/manifest.json');
+    if (file_exists($manifest)) {
+      return hash_file('xxh128', $manifest);
     }
 
-    /**
-     * Sets the root template loaded on the first page visit.
-     *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     */
-    public function rootView(Request $request): string
-    {
-        return $this->rootView;
+    return null;
+  }
+
+  /**
+   * Defines the props that are shared by default.
+   *
+   * @see https://inertiajs.com/shared-data
+   *
+   * @return array<string, mixed>
+   */
+  public function share(Request $request): array
+  {
+    return [
+      'errors' => $this->inertia->always($this->resolveValidationErrors($request)),
+    ];
+  }
+
+  /**
+   * Sets the root template loaded on the first page visit.
+   *
+   * @see https://inertiajs.com/server-side-setup#root-template
+   */
+  public function rootView(Request $request): string
+  {
+    return $this->rootView;
+  }
+
+  /**
+   * Define a callback that returns the relative URL.
+   */
+  public function urlResolver(): ?Closure
+  {
+    return null;
+  }
+
+  /**
+   * This is the core of the Inertia middleware. It checks for Inertia headers,
+   * handles asset versioning, and modifies the response accordingly.
+   */
+  #[Override]
+  public function __invoke(Request $request, HttpMiddlewareCallable $next): Response
+  {
+    $this->inertia->setRootView($this->rootView($request));
+    $this->inertia->share($this->share($request));
+    $this->inertia->version($this->version());
+
+    $urlResolver = $this->urlResolver();
+    if ($urlResolver instanceof \Closure) {
+      $this->inertia->resolveUrlUsing($urlResolver);
     }
 
-    /**
-     * Define a callback that returns the relative URL.
-     */
-    public function urlResolver(): ?Closure
-    {
-        return null;
+    try {
+      $response = $next($request);
+    } catch (ControllerActionHadNoReturn) {
+      if ($request->headers->has(Header::INERTIA)) {
+        $response = $this->onEmptyResponse();
+      } else {
+        return new Ok();
+      }
     }
 
-    /**
-     * This is the core of the Inertia middleware. It checks for Inertia headers,
-     * handles asset versioning, and modifies the response accordingly.
-     */
-    #[Override]
-    public function __invoke(Request $request, HttpMiddlewareCallable $next): Response
-    {
-        $this->inertia->setRootView($this->rootView($request));
-        $this->inertia->share($this->share($request));
-        $this->inertia->version($this->version());
+    $response->addHeader('Vary', Header::INERTIA);
 
-        $urlResolver = $this->urlResolver();
-        if ($urlResolver instanceof \Closure) {
-            $this->inertia->resolveUrlUsing($urlResolver);
-        }
-
-        try {
-            $response = $next($request);
-        } catch (ControllerActionHadNoReturn) {
-            if ($request->headers->has(Header::INERTIA)) {
-                $response = $this->onEmptyResponse();
-            } else {
-                return new Ok();
-            }
-        }
-
-        $response->addHeader('Vary', Header::INERTIA);
-
-        if (!$request->headers->has(Header::INERTIA)) {
-            return $response;
-        }
-
-        $currentVersion = $this->inertia->getVersion();
-        $clientVersion = $request->headers->get(Header::VERSION) ?? '';
-
-        if ($request->method === Method::GET && $clientVersion && $clientVersion !== $currentVersion) {
-            $this->session->reflash();
-
-            return $this->inertia->location($request->uri);
-        }
-
-        if (
-            $response->status === Status::FOUND &&
-                in_array($request->method, [Method::POST, Method::PUT, Method::PATCH], true)
-        ) {
-            $response->setStatus(Status::SEE_OTHER);
-        }
-
-        return $response;
+    if (! $request->headers->has(Header::INERTIA)) {
+      return $response;
     }
 
-    /**
-     * Handle empty responses.
-     */
-    protected function onEmptyResponse(): Response
-    {
-        return new Back();
+    $currentVersion = $this->inertia->getVersion();
+    $clientVersion = $request->headers->get(Header::VERSION) ?? '';
+
+    if ($request->method === Method::GET && $clientVersion && $clientVersion !== $currentVersion) {
+      $this->session->reflash();
+
+      return $this->inertia->location($request->uri);
     }
 
-    /**
-     * Handle version changes.
-     */
-    public function onVersionChange(Request $request): Response
-    {
-        $this->session?->reflash();
-
-        return $this->inertia->location($request->uri);
+    if (
+      $response->status === Status::FOUND &&
+          in_array($request->method, [Method::POST, Method::PUT, Method::PATCH], true)
+    ) {
+      $response->setStatus(Status::SEE_OTHER);
     }
 
-    /**
-     * Resolve validation errors for client-side use.
-     */
-    public function resolveValidationErrors(Request $request): object
-    {
-        $allErrors = $this->session->get(Session::VALIDATION_ERRORS) ?? [];
+    return $response;
+  }
 
-        if ($allErrors === []) {
-            return new \stdClass();
-        }
+  /**
+   * Handle empty responses.
+   */
+  protected function onEmptyResponse(): Response
+  {
+    return new Back();
+  }
 
-        $processedErrors = [];
-        foreach ($allErrors as $field => $rules) {
-            if (is_array($rules) && $rules !== [] && $rules[0] instanceof Rule) {
-                $message = $rules[0]->message();
+  /**
+   * Handle version changes.
+   */
+  public function onVersionChange(Request $request): Response
+  {
+    $this->session?->reflash();
 
-                if (is_array($message)) {
-                    $message = $message[0] ?? null;
-                }
+    return $this->inertia->location($request->uri);
+  }
 
-                if ($message) {
-                    $processedErrors[$field] = $message;
-                }
-            }
-        }
+  /**
+   * Resolve validation errors for client-side use.
+   */
+  public function resolveValidationErrors(Request $request): object
+  {
+    $allErrors = $this->session->get(Session::VALIDATION_ERRORS) ?? [];
 
-        $errorBag = $request->headers->get(Header::ERROR_BAG);
-
-        if ($errorBag) {
-            return (object) [
-                $errorBag => (object) $processedErrors,
-            ];
-        }
-
-        return (object) $processedErrors;
+    if ($allErrors === []) {
+      return new \stdClass();
     }
+
+    $processedErrors = [];
+    foreach ($allErrors as $field => $rules) {
+      if (is_array($rules) && $rules !== [] && $rules[0] instanceof Rule) {
+        $message = $this->validator->getErrorMessage($rules[0], 'Value');
+
+        if ($message) {
+          $processedErrors[$field] = $message;
+        }
+      }
+    }
+
+    $errorBag = $request->headers->get(Header::ERROR_BAG);
+
+    if ($errorBag) {
+      return (object) [
+        $errorBag => (object) $processedErrors,
+      ];
+    }
+
+    return (object) $processedErrors;
+  }
 }

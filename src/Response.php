@@ -372,7 +372,7 @@ final class Response implements HttpResponse
                 'deepMergeProps' => $deepMergeProps,
                 'matchPropsOn' => $matchPropsOn,
             ],
-            fn($prop) => $prop !== [],
+            fn(array $prop) => $prop !== [],
         );
     }
 
