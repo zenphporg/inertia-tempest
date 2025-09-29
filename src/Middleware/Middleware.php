@@ -121,11 +121,11 @@ class Middleware implements HttpMiddleware
         try {
             $response = $next($request);
         } catch (ControllerActionHadNoReturn) {
-            if ($request->headers->has(Header::INERTIA)) {
-                $response = $this->onEmptyResponse();
-            } else {
+            if (!$request->headers->has(Header::INERTIA)) {
                 return new Ok();
             }
+
+            $response = $this->onEmptyResponse();
         }
 
         $response->addHeader('Vary', Header::INERTIA);
@@ -144,8 +144,8 @@ class Middleware implements HttpMiddleware
         }
 
         if (
-            $response->status === Status::FOUND &&
-                in_array($request->method, [Method::POST, Method::PUT, Method::PATCH], true)
+            $response->status === Status::FOUND
+            && in_array($request->method, [Method::POST, Method::PUT, Method::PATCH], true)
         ) {
             $response->setStatus(Status::SEE_OTHER);
         }
