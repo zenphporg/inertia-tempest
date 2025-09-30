@@ -18,7 +18,7 @@ use Tempest\Http\Response;
 use Tempest\Http\Responses\Redirect;
 use Tempest\Http\Status;
 
-use function Tempest\uri;
+use function Tempest\Router\uri;
 
 class ResponseFactoryTest extends TestCase
 {

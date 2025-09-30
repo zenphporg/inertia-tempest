@@ -7,7 +7,7 @@ use Inertia\Support\Header;
 use Inertia\Tests\Fixtures\TestController;
 use Inertia\Tests\TestCase;
 
-use function Tempest\uri;
+use function Tempest\Router\uri;
 
 class HistoryTest extends TestCase
 {

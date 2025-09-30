@@ -15,10 +15,10 @@ use Tempest\Http\ContentType;
 use Tempest\Http\Request;
 use Tempest\Http\Session\Session;
 use Tempest\Http\Status;
-use Tempest\Validation\Rules\Email;
+use Tempest\Validation\Rules\IsEmail;
 
 use function Tempest\root_path;
-use function Tempest\uri;
+use function Tempest\Router\uri;
 
 class MiddlewareTest extends TestCase
 {
@@ -190,7 +190,7 @@ class MiddlewareTest extends TestCase
         $session = $this->container->get(Session::class);
 
         $validationErrors = [
-            'email' => [new Email()],
+            'email' => [new IsEmail()],
         ];
         $this->assertInstanceOf(Session::class, $session);
         $session->set(Session::VALIDATION_ERRORS, $validationErrors);
@@ -203,7 +203,7 @@ class MiddlewareTest extends TestCase
         $errors = $sharedData['errors']();
 
         $this->assertIsObject($errors);
-        $this->assertSame('Value should be a valid email address', $errors->email);
+        $this->assertSame('Value must be a valid email address', $errors->email);
     }
 
     public function test_default_validation_errors_can_be_overwritten(): void
@@ -232,7 +232,7 @@ class MiddlewareTest extends TestCase
         $session = $this->container->get(Session::class);
 
         $validationErrors = [
-            'email' => [new Email()],
+            'email' => [new IsEmail()],
         ];
         $this->assertInstanceOf(Session::class, $session);
         $session->set(Session::VALIDATION_ERRORS, $validationErrors);
@@ -246,7 +246,7 @@ class MiddlewareTest extends TestCase
 
         $this->assertIsObject($errors);
         $this->assertObjectHasProperty('example', $errors);
-        $this->assertSame('Value should be a valid email address', $errors->example->email);
+        $this->assertSame('Value must be a valid email address', $errors->example->email);
     }
 
     public function test_middleware_can_change_the_root_view_via_a_property(): void

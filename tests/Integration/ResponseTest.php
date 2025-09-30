@@ -20,7 +20,7 @@ use Tempest\Support\Paginator\PaginatedData;
 use Tempest\Support\Paginator\Paginator;
 use Tempest\View\ViewRenderer;
 
-use function Tempest\uri;
+use function Tempest\Router\uri;
 
 class ResponseTest extends TestCase
 {

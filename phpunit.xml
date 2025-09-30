@@ -29,5 +29,6 @@
     <env name="BASE_URI" value="" />
     <env name="CACHE" value="null" />
     <env name="DISCOVERY_CACHE" value="true" />
+    <env name="SIGNING_KEY" value="pJLVJ5fKA4u0GKf6JlNk226Sy1MTJFWKd/+PxNVZqZE=" />
   </php>
 </phpunit>

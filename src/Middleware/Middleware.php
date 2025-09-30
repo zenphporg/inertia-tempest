@@ -20,6 +20,7 @@ use Tempest\Router\Exceptions\ControllerActionHadNoReturn;
 use Tempest\Router\HttpMiddleware;
 use Tempest\Router\HttpMiddlewareCallable;
 use Tempest\Validation\Rule;
+use Tempest\Validation\Validator;
 
 use function Tempest\env;
 use function Tempest\get;
@@ -34,6 +35,7 @@ class Middleware implements HttpMiddleware
 
     public function __construct(
         public readonly ResponseFactory $inertia,
+        private readonly Validator $validator,
     ) {}
 
     /**
@@ -183,13 +185,9 @@ class Middleware implements HttpMiddleware
         $processedErrors = [];
         foreach ($allErrors as $field => $rules) {
             if (is_array($rules) && $rules !== [] && $rules[0] instanceof Rule) {
-                $message = $rules[0]->message();
+                $message = $this->validator->getErrorMessage($rules[0], 'Value');
 
-                if (is_array($message)) {
-                    $message = $message[0] ?? null;
-                }
-
-                if ($message) {
+                if ($message !== '' && $message !== '0') {
                     $processedErrors[$field] = $message;
                 }
             }
